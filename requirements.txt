@@ -1,0 +1,65 @@
+# =============================================================================
+# Enterprise AI Knowledge Assistant — dependencies
+#
+# Cost target: $0. Groq free tier (LLM), local HuggingFace embeddings (no API),
+# Pinecone serverless free tier (vector DB).
+#
+# Targets the LangChain/LangGraph 1.x line (current stable), NOT the 0.2/0.3 line
+# that most RAG tutorials still use. Notable differences: `langchain-core` 1.x,
+# `create_agent` replacing the legacy agent constructors, and `langgraph` 1.x.
+#
+# ALWAYS install into a virtualenv:
+#     python -m venv .venv && .venv/Scripts/activate      # Windows
+#     python -m venv .venv && source .venv/bin/activate   # macOS / Linux
+#
+# NOTE ON torch: the default wheel bundles CUDA and is ~2.5GB. For a slim CPU-only
+# install run this BEFORE `pip install -r requirements.txt`:
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+# =============================================================================
+
+# --- Core orchestration -------------------------------------------------------
+langgraph==1.2.11
+langchain==1.4.0
+langchain-core==1.6.2
+langchain-text-splitters==1.1.2
+
+# --- Model providers ----------------------------------------------------------
+langchain-groq==1.1.3            # Groq API: Llama 3.3 70B / 3.1 8B, free tier
+langchain-huggingface==1.2.2     # local embeddings, no API key required
+sentence-transformers==6.0.1     # backs BAAI/bge-small-en-v1.5 (384-dim)
+torch==2.5.1                     # see CPU-only note above
+
+# --- Vector database ----------------------------------------------------------
+pinecone==7.3.0                  # new SDK name (NOT the legacy `pinecone-client`)
+
+# --- Document loading ---------------------------------------------------------
+pypdf==6.17.0
+reportlab==5.0.1                 # renders the sample PDFs in the synthetic corpus
+
+# --- API layer ----------------------------------------------------------------
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+pydantic-settings==2.15.0
+sse-starlette==3.4.10
+
+# --- Frontend -----------------------------------------------------------------
+streamlit==1.63.0
+requests==2.34.2
+
+# --- Evaluation ---------------------------------------------------------------
+ragas==0.4.3                     # 0.4.x: `evaluate()` + explicit LLM/embedding wrappers
+datasets==5.0.1
+pandas==3.0.5
+
+# --- Utilities ----------------------------------------------------------------
+python-dotenv==1.2.3
+structlog==26.1.0
+tenacity==8.5.0
+tqdm==4.70.0
+
+# --- Dev / quality ------------------------------------------------------------
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
+ruff==0.16.6                     # linter AND formatter (replaces black)

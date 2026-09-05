@@ -1,0 +1,13 @@
+# Streamlit configuration.
+# headless: never try to open a browser (breaks in containers and on HF Spaces).
+# gatherUsageStats: no telemetry from a portfolio demo.
+[server]
+headless = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#4F46E5"

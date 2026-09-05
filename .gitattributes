@@ -1,0 +1,22 @@
+# Normalise line endings.
+#
+# This project is developed on Windows but its shell scripts run inside Linux
+# containers. A CRLF `docker/start.sh` makes the shebang `#!/usr/bin/env bash\r`,
+# and the container dies with `env: 'bash\r': No such file or directory` — an
+# error that gives no hint about line endings. Forcing LF on these files stops
+# that recurring on any checkout.
+
+* text=auto eol=lf
+
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+Makefile      text eol=lf
+.env.example  text eol=lf
+
+# Binary: never touch.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.gif binary

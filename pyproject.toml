@@ -1,0 +1,39 @@
+[project]
+name = "enterprise-ai-knowledge-assistant"
+version = "0.1.0"
+description = "Agentic RAG knowledge assistant: LangGraph + Pinecone + Groq, with RAGAS evaluation."
+requires-python = ">=3.10"
+
+# Formatting is done by `ruff format` (Black-compatible) rather than Black itself:
+# Black refuses to run on CPython 3.12.5 due to an upstream AST safety issue, and one
+# tool for both linting and formatting is one fewer dependency.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+# E/W: pycodestyle (PEP-8)  F: pyflakes  I: import order  B: bugbear
+# D: pydocstyle  UP: pyupgrade  N: pep8-naming
+select = ["E", "W", "F", "I", "B", "D", "UP", "N"]
+ignore = [
+    "D203",   # conflicts with D211
+    "D213",   # conflicts with D212
+    "E501",   # line length is enforced by the formatter, not the linter
+    "UP042",  # suggests enum.StrEnum, which is 3.11+; this project supports 3.10
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]        # docstrings not required in tests
+"**/__init__.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-q"
