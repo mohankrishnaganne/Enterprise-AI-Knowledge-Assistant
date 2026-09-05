@@ -31,10 +31,42 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 
-echo "Assembling deployment tree for https://huggingface.co/spaces/${SPACE}"
+PYTHON="${PYTHON:-python}"
+
+# --- Authentication -----------------------------------------------------------
+# Checked up front so the failure is one clear line rather than an opaque git error
+# forty seconds into staging.
+if ! "$PYTHON" -c "
+from huggingface_hub import whoami
+print('Authenticated as', whoami()['name'])
+" 2>/dev/null; then
+    echo "Not logged in to Hugging Face. Run:  hf auth login" >&2
+    exit 1
+fi
+
+# --- Create the Space if it does not exist -------------------------------------
+# `exist_ok=True` makes this idempotent, so the script is safe to re-run and the
+# first deploy does not require a detour through the web UI.
+echo "Ensuring the Space exists: https://huggingface.co/spaces/${SPACE}"
+"$PYTHON" - "$SPACE" <<'PYEOF'
+import sys
+from huggingface_hub import create_repo
+
+space = sys.argv[1]
+url = create_repo(
+    repo_id=space,
+    repo_type="space",
+    space_sdk="docker",
+    exist_ok=True,
+)
+print(f"  ready: {url}")
+PYEOF
+
+echo "Assembling deployment tree"
 
 git clone --depth 1 "https://huggingface.co/spaces/${SPACE}" "$STAGING/space" 2>/dev/null || {
-    echo "Could not clone the Space. Create it first at https://huggingface.co/new-space" >&2
+    echo "Could not clone the Space even after creating it." >&2
+    echo "Check that git has credentials for huggingface.co (hf auth login sets these)." >&2
     exit 1
 }
 
