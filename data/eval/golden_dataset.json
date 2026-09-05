@@ -1,0 +1,180 @@
+{
+  "$schema_notes": {
+    "purpose": "Ground truth for both the RAGAS evaluation and the retrieval A/B benchmark.",
+    "relevance_rule": "A retrieved chunk counts as RELEVANT iff its `source` is in `expected_sources` AND its text contains at least one string from `answer_phrases` (case-insensitive). Everything else retrieved is counted as an irrelevant result. This rule is keyed on source+content rather than on chunk_id because the optimized and baseline arms produce different chunk boundaries, so chunk ids are not comparable across arms.",
+    "answerable": "Set to false for questions the corpus deliberately cannot answer. These are excluded from retrieval and RAGAS scoring and are used only to test the agent's rewrite-then-fallback path.",
+    "multi_hop": "True where answering requires evidence from more than one document; these exercise the decomposition node."
+  },
+  "questions": [
+    {
+      "id": "q01",
+      "question": "How many API requests per minute does the Growth plan allow?",
+      "ground_truth": "The Growth plan allows 3,000 API requests per minute.",
+      "expected_category": "technical",
+      "expected_sources": ["technical/rate_limits.md"],
+      "answer_phrases": ["3,000"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q02",
+      "question": "How long are ACME access tokens valid, and how do refresh tokens work?",
+      "ground_truth": "Access tokens are JWTs valid for 60 minutes. Refresh tokens are valid for 30 days and are single-use: each refresh returns a new refresh token and invalidates the previous one. Reusing a consumed refresh token revokes the entire token family.",
+      "expected_category": "technical",
+      "expected_sources": ["technical/authentication.md"],
+      "answer_phrases": ["valid for 60 minutes", "single-use", "token family"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q03",
+      "question": "What has to be true before I can deploy to production, and how do I roll back?",
+      "ground_truth": "A deploy requires the change merged to main with green CI, at least a 2 hour staging soak with no new error-rate alerts, an open deploy window (Monday to Thursday, 09:00-16:00 UTC), and no open Sev-1 or Sev-2 incident. Rollback is `acmectl rollback --service <name>`, targets the previous known-good SHA and completes in about 4 minutes, but does not revert database migrations.",
+      "expected_category": "technical",
+      "expected_sources": ["technical/deployment_runbook.md"],
+      "answer_phrases": ["staging soak", "deploy window", "acmectl rollback", "4 minutes"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q04",
+      "question": "Why does it take about 30 seconds for ingested records to become queryable?",
+      "ground_truth": "Records are first written to the durable append-only log, then compacted into the columnar store that the query engine reads. Compaction runs continuously with a target lag of about 30 seconds, which is the source of the documented delay.",
+      "expected_category": "technical",
+      "expected_sources": ["technical/system_architecture.md"],
+      "answer_phrases": ["target lag of 30 seconds", "columnar store"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q05",
+      "question": "What produces the 409 DATASET_EXISTS error at the database level?",
+      "ground_truth": "The datasets table has a unique constraint on (project_id, name) filtered to deleted_at IS NULL. Violating it produces the 409 DATASET_EXISTS API error.",
+      "expected_category": "technical",
+      "expected_sources": ["technical/database_schema.md", "technical/api_reference.md"],
+      "answer_phrases": ["DATASET_EXISTS"],
+      "answerable": true,
+      "multi_hop": true
+    },
+    {
+      "id": "q06",
+      "question": "How quickly must an on-call engineer acknowledge a page, and what happens if they don't?",
+      "ground_truth": "The on-call engineer must acknowledge within 5 minutes. If unacknowledged the alert escalates to the secondary on-call, and after a further 5 minutes to the engineering manager on the escalation rota.",
+      "expected_category": "operational",
+      "expected_sources": ["operational/incident_response.md", "operational/oncall_rotation.md"],
+      "answer_phrases": ["within 5 minutes", "secondary"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q07",
+      "question": "What counts as a Sev-1 incident and who must be notified?",
+      "ground_truth": "Sev-1 is a complete outage of a customer-facing service, confirmed data loss, or an active security breach; any customer data exposure is automatically Sev-1. It requires executive notification within 15 minutes of declaration, sent by the Communications Lead to the VP Engineering and the VP Customer Success.",
+      "expected_category": "operational",
+      "expected_sources": ["operational/incident_response.md"],
+      "answer_phrases": ["Complete outage", "within 15 minutes"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q08",
+      "question": "How many PTO days do I get, and how many can I carry over?",
+      "ground_truth": "Full-time employees accrue 25 working days per calendar year, rising to 30 days after 5 years of service. Up to 5 unused days may be carried into the following year and must be used by 31 March; days beyond 5 are forfeited.",
+      "expected_category": "operational",
+      "expected_sources": ["operational/pto_policy.md"],
+      "answer_phrases": ["25 working days", "5 unused days"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q09",
+      "question": "What happens if my booked holiday overlaps with an on-call rotation?",
+      "ground_truth": "PTO and on-call must not overlap. If a booked PTO period conflicts with a published rotation, the rotation is changed rather than the PTO, and swapping is the responsibility of the team's on-call coordinator rather than the person going on leave.",
+      "expected_category": "operational",
+      "expected_sources": ["operational/pto_policy.md"],
+      "answer_phrases": ["must not overlap", "on-call coordinator"],
+      "answerable": true,
+      "multi_hop": true
+    },
+    {
+      "id": "q10",
+      "question": "What are the MFA requirements for engineers with production access?",
+      "ground_truth": "Multi-factor authentication is mandatory on every system. Hardware security keys are required for anyone with production access; TOTP applications are acceptable for everyone else, and SMS-based second factors are not permitted anywhere at ACME.",
+      "expected_category": "operational",
+      "expected_sources": ["operational/security_compliance.md"],
+      "answer_phrases": ["Hardware security keys", "SMS-based second factors"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q11",
+      "question": "How much does the Growth plan cost and what is the overage rate for ingestion?",
+      "ground_truth": "Growth is 499 USD per month. Ingestion above the plan allowance is billed at 0.35 USD per million rows on Growth. Overage must be explicitly enabled and is off by default.",
+      "expected_category": "business",
+      "expected_sources": ["business/pricing.md"],
+      "answer_phrases": ["499 USD", "0.35 USD per million rows"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q12",
+      "question": "What was ACME's ARR at the end of Q3 2025 and how did net revenue retention move?",
+      "ground_truth": "ARR closed Q3 2025 at 24.6 million USD, up 8.4% quarter over quarter and 41% year over year. Net revenue retention was 118%, down from 121% in Q2, driven by lower expansion in the Starter segment rather than by increased churn.",
+      "expected_category": "business",
+      "expected_sources": ["business/q3_2025_report.pdf"],
+      "answer_phrases": ["24.6 million USD", "118%"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q13",
+      "question": "How do we compete against Bluepeak, and are we allowed to discount to match them?",
+      "ground_truth": "Bluepeak is the low-cost challenger at roughly 40% below list. ACME wins on compliance requirements, since Bluepeak lacks SSO below its top tier, has no audit log export, offers a 99.5% SLA against ACME's 99.95%, and is single-region with no documented disaster recovery. Discounting to match Bluepeak is not authorised; the correct response is to disqualify or move the conversation to requirements.",
+      "expected_category": "business",
+      "expected_sources": ["business/competitor_analysis.md"],
+      "answer_phrases": ["Bluepeak", "not authorised"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q14",
+      "question": "What is the P1 support response target for an Enterprise customer, and what service credit applies if uptime falls below 99.5%?",
+      "ground_truth": "The P1 response target for Enterprise is 30 minutes, 24x7. Service credits for Enterprise are 25% of the monthly fee for uptime below 99.5%.",
+      "expected_category": "business",
+      "expected_sources": ["business/customer_support_sla.pdf"],
+      "answer_phrases": ["30 minutes", "25%"],
+      "answerable": true,
+      "multi_hop": false
+    },
+    {
+      "id": "q15",
+      "question": "Which two Enterprise renewals are at risk, and which roadmap item is meant to address the reason?",
+      "ground_truth": "Two Enterprise renewals totalling 1.6 million USD are at risk in Q4, both citing the absence of a self-hosted option. Self-hosted deployment for Growth is planned for Q1 2026 and is the commercial response to this.",
+      "expected_category": "business",
+      "expected_sources": ["business/q3_2025_report.pdf", "business/product_roadmap.md"],
+      "answer_phrases": ["1.6 million USD", "Self-hosted deployment"],
+      "answerable": true,
+      "multi_hop": true
+    },
+    {
+      "id": "q16",
+      "question": "What is ACME's policy on cryptocurrency payments from customers?",
+      "ground_truth": "The corpus does not document any policy on cryptocurrency payments. The assistant should say it does not know rather than inventing one.",
+      "expected_category": "business",
+      "expected_sources": [],
+      "answer_phrases": [],
+      "answerable": false,
+      "multi_hop": false
+    },
+    {
+      "id": "q17",
+      "question": "How many Kubernetes clusters does ACME run in the Tokyo region?",
+      "ground_truth": "The corpus documents only us-east-1 and an eu-west-1 replica. There is no Tokyo region, so the assistant should decline rather than answer.",
+      "expected_category": "technical",
+      "expected_sources": [],
+      "answer_phrases": [],
+      "answerable": false,
+      "multi_hop": false
+    }
+  ]
+}
