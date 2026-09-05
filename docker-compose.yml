@@ -1,0 +1,63 @@
+# Local development: API and UI as separate services.
+#
+# Deliberately different from the Dockerfile's single-container layout. That one exists
+# because free Hugging Face Spaces runs exactly one container; this one splits the
+# services so you can restart, scale or read the logs of either independently — which is
+# what you actually want while developing, and is closer to how this would really be
+# deployed.
+#
+#   docker compose up --build
+#   UI  -> http://localhost:8501
+#   API -> http://localhost:8000/docs
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Override the image's combined entrypoint: this service is the API only.
+    command: >
+      python -m uvicorn api.main:app
+      --host 0.0.0.0 --port 8000 --workers 1
+    env_file: .env
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # The UI waits on this, so it must reflect real readiness. start_period covers
+      # the embedding model load in the lifespan handler.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+    volumes:
+      # Source mounted read-only for fast iteration without a rebuild. Remove these two
+      # mounts to test the image exactly as it will be deployed.
+      - ./src:/app/src:ro
+      - ./api:/app/api:ro
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      streamlit run ui/app.py
+      --server.port 8501 --server.address 0.0.0.0
+      --server.headless true --browser.gatherUsageStats false
+    environment:
+      # Service name, not localhost: in compose these are separate network namespaces.
+      API_BASE_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        # Wait for healthy, not just started, so the sidebar is not red on first load.
+        condition: service_healthy
+    volumes:
+      - ./ui:/app/ui:ro
+    restart: unless-stopped

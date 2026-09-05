@@ -1,0 +1,35 @@
+# Build context hygiene: keep the image small and never bake secrets into a layer.
+
+# --- Secrets (critical: these must never enter an image layer) ---
+.env
+.env.local
+*.key
+
+# --- Local environments ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- VCS and CI ---
+.git/
+.github/
+.gitignore
+
+# --- Model / HF caches (re-downloaded at build time into the image) ---
+.cache/
+models/
+
+# --- Generated PDFs; scripts/generate_corpus.py rebuilds them in the image ---
+data/raw/**/*.pdf
+
+# --- Docs and dev artifacts not needed at runtime ---
+docs/
+tests/
+*.md
+!README.md
+.streamlit/secrets.toml
+*.log

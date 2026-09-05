@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, format and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install CPU-only torch first
+        # The default wheel bundles CUDA and is ~2.5GB, which is slow and pointless in CI.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate the corpus
+        # The two sample PDFs are gitignored build artifacts, so the tests covering the
+        # PDF ingestion path need them rebuilt here.
+        run: python scripts/generate_corpus.py
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Tests
+        # Unit tests mock the LLM and vector store, so no API keys are needed.
+        run: pytest
+
+  shell-scripts:
+    name: Shell script sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject CRLF line endings in shell scripts
+        # A CRLF start.sh makes the container's shebang request an interpreter whose name
+        # ends in a carriage return, and it dies with a message that says nothing about
+        # line endings. This repo is developed on Windows, so the guard is worth having.
+        run: |
+          if grep -rlU $'\r' --include='*.sh' .; then
+            echo "::error::the shell scripts above contain CRLF line endings; see .gitattributes"
+            exit 1
+          fi
+          echo "all shell scripts are LF-only"
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck docker/start.sh
+
+  docker:
+    name: Docker image builds and starts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: acme-assistant:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Container starts and reports its missing configuration
+        # Without credentials the container must fail fast with a clear message rather
+        # than starting and erroring on every request. That behaviour is worth asserting:
+        # it is the difference between a five-second diagnosis and a long one.
+        run: |
+          output=$(docker run --rm acme-assistant:ci 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "GROQ_API_KEY" \
+            || { echo "::error::container did not report the missing API key clearly"; exit 1; }
+
+      - name: Image contains the baked model and corpus
+        run: |
+          docker run --rm acme-assistant:ci python -c "
+          import glob, os
+          from pathlib import Path
+          cache = Path(os.environ['HF_HOME'])
+          assert any('bge-small' in str(p) for p in cache.rglob('*')), 'embedding model not baked in'
+          assert len(glob.glob('data/raw/*/*.md')) >= 15, 'markdown corpus missing'
+          assert len(glob.glob('data/raw/*/*.pdf')) == 2, 'corpus PDFs not regenerated'
+          assert Path('data/eval/golden_dataset.json').exists(), 'golden dataset missing'
+          print('image contents verified')
+          "
