@@ -1,0 +1,22 @@
+# =============================================================================
+# Local embedding backend (EMBEDDING_BACKEND=local).
+#
+# Needed to INGEST — chunks are embedded on the machine that runs the pipeline —
+# and by the Docker image, which bakes the model in so it has no query-time
+# network dependency. Not needed by Streamlit Community Cloud, which uses the
+# hosted backend instead; torch alone would exceed what that free tier can hold.
+#
+#     pip install -r requirements-embeddings.txt
+#
+# The extra index below resolves the CPU-only torch build. Note this file is never
+# installed by uv on Streamlit Cloud, which is what makes the extra index safe here
+# (see the note in requirements.txt).
+# =============================================================================
+
+-r requirements.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.5.1                     # resolves to 2.5.1+cpu via the index above
+sentence-transformers==6.0.1     # runs BAAI/bge-small-en-v1.5 locally
+langchain-huggingface==1.2.2     # LangChain wrapper around it

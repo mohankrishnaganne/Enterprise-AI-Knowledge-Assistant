@@ -12,8 +12,15 @@ Two things here are load-order sensitive and easy to get wrong:
    it first would freeze in the placeholder values and every request would fail with a
    missing-credentials error that looks nothing like a configuration problem.
 2. **The compiled graph is cached with ``st.cache_resource``.** Streamlit re-executes
-   this script top-to-bottom on every interaction; without the cache, the ~130MB
-   embedding model would reload on every click.
+   this script top-to-bottom on every interaction, so without the cache the warm-up
+   would repeat on every click.
+
+Embeddings here come from the HuggingFace Inference API rather than a local model.
+Streamlit Cloud runs Python 3.14, for which torch 2.5.x publishes no wheels at all, and
+the CUDA build it would otherwise resolve is far larger than the free tier allows. The
+hosted endpoint serves the same ``BAAI/bge-small-en-v1.5`` and returns identical vectors
+(verified at cosine 1.000000), so this deployment queries the very same Pinecone index
+and the committed benchmark numbers describe it accurately.
 
 Deployed from https://share.streamlit.io pointing at this file.
 """
@@ -32,7 +39,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-REQUIRED_SECRETS = ("GROQ_API_KEY", "PINECONE_API_KEY")
+REQUIRED_SECRETS = ("GROQ_API_KEY", "PINECONE_API_KEY", "HF_TOKEN")
 
 # Non-secret defaults. Streamlit Cloud has no .env file, and these must match the values
 # the retrieval benchmark measured, or the deployed app is not the system that was
@@ -44,6 +51,12 @@ CONFIG_DEFAULTS = {
     "PINECONE_NAMESPACE": "v1",
     "EMBEDDING_MODEL": "BAAI/bge-small-en-v1.5",
     "EMBEDDING_DIM": "384",
+    # Hosted embeddings, not local. Streamlit Cloud runs Python 3.14, where torch has
+    # no wheels for the pinned version and the CUDA build would far exceed the free
+    # tier anyway. The Inference API serves the same model and returns identical
+    # vectors (cosine 1.000000), so the Pinecone index built locally is queried
+    # unchanged and the benchmark numbers still describe this deployment.
+    "EMBEDDING_BACKEND": "hf_api",
     "RETRIEVAL_TOP_K": "5",
     "RETRIEVAL_FETCH_K": "20",
     "RETRIEVAL_MMR_LAMBDA": "1.0",
@@ -103,10 +116,12 @@ as TOML:
 ```toml
 GROQ_API_KEY = "gsk_..."
 PINECONE_API_KEY = "pcsk_..."
+HF_TOKEN = "hf_..."
 ```
 
 - Groq key: <https://console.groq.com/keys>
 - Pinecone key: <https://app.pinecone.io>
+- HuggingFace token: <https://huggingface.co/settings/tokens> (read scope is enough)
 
 The Pinecone index must already be populated — this app queries an existing index
 rather than ingesting on startup. Run `python scripts/run_ingestion.py` locally first.
@@ -124,18 +139,18 @@ from ui.components import (  # noqa: E402
 )
 
 
-@st.cache_resource(show_spinner="Loading the embedding model and compiling the agent…")
+@st.cache_resource(show_spinner="Warming up the agent…")
 def load_agent():
-    """Compile the graph and warm the embedding model once per process.
+    """Compile the graph and warm the embedding backend once per process.
 
     ``st.cache_resource`` is essential rather than an optimisation: Streamlit re-runs
-    this script on every interaction, and without it each click would reload a 130MB
-    model.
+    this script top-to-bottom on every interaction, so without it the warm-up would
+    repeat on every click.
     """
     from src.agent.graph import answer_question, compile_graph
-    from src.retrieval.embedder import get_embedder
+    from src.retrieval.embedder import warm_up
 
-    get_embedder()
+    warm_up()
     compile_graph()
     return answer_question
 
@@ -146,10 +161,20 @@ def check_backend() -> tuple[bool, list[dict]]:
     components: list[dict] = []
 
     try:
-        from src.retrieval.embedder import get_embedder
+        from src.config import settings
+        from src.retrieval.embedder import warm_up
 
-        get_embedder()
-        components.append({"name": "embeddings", "ready": True, "detail": "model loaded"})
+        warm_up()
+        backend = (
+            "HuggingFace Inference API" if settings.embedding_backend == "hf_api" else "local model"
+        )
+        components.append(
+            {
+                "name": "embeddings",
+                "ready": True,
+                "detail": f"{backend} ({settings.embedding_model})",
+            }
+        )
     except Exception as exc:  # noqa: BLE001
         components.append({"name": "embeddings", "ready": False, "detail": str(exc)[:150]})
 
@@ -226,7 +251,7 @@ with st.sidebar:
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
-    st.caption("Running the agent in-process (no separate API service).")
+    st.caption("Agent runs in-process; embeddings are served by the HuggingFace Inference API.")
 
 
 # ---------------------------------------------------------------------------

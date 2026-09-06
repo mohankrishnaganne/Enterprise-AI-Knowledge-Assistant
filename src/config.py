@@ -63,7 +63,17 @@ class Settings(BaseSettings):
     # single index the Pinecone free tier allows.
     pinecone_baseline_namespace: str = "baseline"
 
-    # --- Embeddings (local HuggingFace, no API cost) --------------------------
+    # --- Embeddings -----------------------------------------------------------
+    # Two backends produce *identical* vectors for the same model, verified at
+    # cosine 1.000000, so the same Pinecone index serves both and the retrieval
+    # benchmark stays valid whichever is in use:
+    #   "local"  - sentence-transformers on CPU. No network, no rate limit, but
+    #              needs torch (~2GB installed) and a 130MB model download.
+    #   "hf_api" - HuggingFace Inference API. Nothing to install beyond
+    #              huggingface_hub, which is what makes the app deployable on a
+    #              free tier that cannot hold torch.
+    embedding_backend: Literal["local", "hf_api"] = "local"
+    hf_token: str = Field(default="", description="HuggingFace token; required by hf_api.")
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
     embedding_device: str = "cpu"
@@ -118,6 +128,16 @@ class Settings(BaseSettings):
                 "https://console.groq.com/keys"
             )
         return self.groq_api_key
+
+    def require_hf_token(self) -> str:
+        """Return the HuggingFace token, raising a clear error if it is missing."""
+        if not self.hf_token:
+            raise RuntimeError(
+                "EMBEDDING_BACKEND is 'hf_api' but HF_TOKEN is not set. Create a token at "
+                "https://huggingface.co/settings/tokens (read scope is enough), or set "
+                "EMBEDDING_BACKEND=local to embed on this machine instead."
+            )
+        return self.hf_token
 
     def require_pinecone(self) -> str:
         """Return the Pinecone key, raising a clear error if it is missing."""

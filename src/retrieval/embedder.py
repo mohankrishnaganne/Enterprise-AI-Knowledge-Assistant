@@ -1,24 +1,36 @@
-"""Local embedding model.
+"""Embeddings, with two interchangeable backends.
 
-Uses ``BAAI/bge-small-en-v1.5`` through sentence-transformers. It runs on the local CPU,
-so embedding costs nothing and works offline once the ~130 MB model is cached.
+Both serve ``BAAI/bge-small-en-v1.5`` and produce **identical** 384-dimensional vectors --
+measured at cosine 1.000000 between them -- so the same Pinecone index serves either and
+the retrieval benchmark's numbers hold whichever is configured:
 
-Two details that matter for retrieval quality with BGE models:
+``local`` (default)
+    sentence-transformers on CPU. No network call, no rate limit, works offline once the
+    ~130 MB model is cached. Costs ~2 GB of installed dependencies (torch) and ~40 s of
+    startup. Used for ingestion, evaluation, Docker and local development.
+
+``hf_api``
+    HuggingFace Inference API. Needs only ``huggingface_hub``, which is what makes the
+    app deployable on a free tier that cannot hold torch -- Streamlit Community Cloud
+    runs Python 3.14, where torch 2.5.x has no wheels at all, and the CUDA build it would
+    otherwise pull is far too large. Trades a network round trip per query for a
+    deployable footprint.
+
+Two details that matter for retrieval quality with BGE models, and apply to both backends:
 
 1. **Normalised vectors.** BGE is trained for cosine similarity, and the Pinecone index
-   is created with ``metric="cosine"``. Normalising at encode time also means the dot
-   product equals cosine, which keeps the MMR maths below straightforward.
+   uses ``metric="cosine"``. Normalising at encode time also makes the dot product equal
+   cosine, which keeps the MMR maths in ``retriever.py`` straightforward.
 2. **An asymmetric query prefix.** BGE was trained with the instruction
    ``"Represent this sentence for searching relevant passages: "`` prepended to *queries*
-   but not to passages. Omitting it costs a few points of retrieval accuracy, and it is
-   the single most commonly missed detail when people adopt these models.
+   but not to passages. Omitting it quietly costs retrieval accuracy, which is why it is
+   applied in one place that every caller goes through.
 """
 
 from __future__ import annotations
 
+import math
 from functools import lru_cache
-
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from src.config import settings
 from src.logging_conf import get_logger
@@ -35,22 +47,47 @@ def _query_instruction_for(model_name: str) -> str:
     return BGE_QUERY_INSTRUCTION if "bge" in model_name.lower() else ""
 
 
-@lru_cache(maxsize=1)
-def get_embedder() -> HuggingFaceEmbeddings:
-    """Return the process-wide embedding model.
+def _normalise(vector: list[float]) -> list[float]:
+    """L2-normalise, so the dot product equals cosine similarity."""
+    norm = math.sqrt(sum(x * x for x in vector))
+    return [x / norm for x in vector] if norm else vector
 
-    Cached because loading sentence-transformers takes several seconds and allocates a
-    few hundred megabytes; the FastAPI app must not pay that per request.
+
+def _check_dimension(actual: int) -> None:
+    """Fail fast on a dimension mismatch rather than at upsert time.
+
+    A Pinecone index's dimension is immutable, so this otherwise surfaces much later as
+    an opaque server-side error.
     """
+    if actual != settings.embedding_dim:
+        raise RuntimeError(
+            f"EMBEDDING_DIM is {settings.embedding_dim} but {settings.embedding_model} "
+            f"produces {actual}-dimensional vectors. Update .env and recreate the "
+            "Pinecone index -- dimension cannot be changed in place."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Local backend (sentence-transformers)
+# ---------------------------------------------------------------------------
+@lru_cache(maxsize=1)
+def get_embedder():
+    """Return the process-wide local embedding model.
+
+    Cached because loading sentence-transformers takes tens of seconds and allocates
+    hundreds of megabytes; no server may pay that per request.
+    """
+    # Imported lazily so the hf_api backend never requires torch to be installed.
+    from langchain_huggingface import HuggingFaceEmbeddings
+
     log.info(
         "loading_embedding_model",
         model=settings.embedding_model,
         device=settings.embedding_device,
     )
 
-    # NOTE: langchain-huggingface 1.x dropped the `query_instruction` field that 0.x
-    # had, so the BGE prefix is applied explicitly in `embed_query` below rather than
-    # being delegated to the wrapper.
+    # NOTE: langchain-huggingface 1.x dropped the `query_instruction` field that 0.x had,
+    # so the BGE prefix is applied explicitly in `embed_query` below.
     embedder = HuggingFaceEmbeddings(
         model_name=settings.embedding_model,
         model_kwargs={"device": settings.embedding_device},
@@ -61,43 +98,88 @@ def get_embedder() -> HuggingFaceEmbeddings:
         query_encode_kwargs={"normalize_embeddings": True},
     )
 
-    # Fail fast and loudly if the configured dimension does not match reality; a
-    # mismatch otherwise surfaces much later as an opaque Pinecone upsert error.
-    actual_dim = len(embedder.embed_query("dimension probe"))
-    if actual_dim != settings.embedding_dim:
-        raise RuntimeError(
-            f"EMBEDDING_DIM is {settings.embedding_dim} but {settings.embedding_model} "
-            f"produces {actual_dim}-dimensional vectors. Update .env and recreate the "
-            "Pinecone index -- an index's dimension cannot be changed in place."
-        )
-
-    log.info("embedding_model_ready", model=settings.embedding_model, dim=actual_dim)
+    _check_dimension(len(embedder.embed_query("dimension probe")))
+    log.info("embedding_model_ready", model=settings.embedding_model)
     return embedder
 
 
+# ---------------------------------------------------------------------------
+# Hosted backend (HuggingFace Inference API)
+# ---------------------------------------------------------------------------
+@lru_cache(maxsize=1)
+def get_inference_client():
+    """Return a cached HuggingFace Inference client."""
+    from huggingface_hub import InferenceClient
+
+    log.info("using_hf_inference_api", model=settings.embedding_model)
+    # `or None` lets InferenceClient fall back to a cached `hf auth login` token, which
+    # is how this works on a developer machine. Streamlit Cloud has no such cache, so
+    # streamlit_app.py requires HF_TOKEN as a secret there.
+    return InferenceClient(token=settings.hf_token or None)
+
+
+def _hf_embed(text: str) -> list[float]:
+    """Embed one string through the Inference API, normalised.
+
+    The endpoint returns either a flat vector or a nested one depending on the model's
+    pooling configuration, so the result is flattened defensively rather than indexed
+    with an assumption about its shape.
+    """
+    output = get_inference_client().feature_extraction(text, model=settings.embedding_model)
+
+    vector = output.tolist() if hasattr(output, "tolist") else list(output)
+    while vector and isinstance(vector[0], list):
+        vector = vector[0]
+
+    _check_dimension(len(vector))
+    return _normalise([float(x) for x in vector])
+
+
+# ---------------------------------------------------------------------------
+# Public interface
+# ---------------------------------------------------------------------------
+def using_hosted_embeddings() -> bool:
+    """Whether queries are embedded remotely rather than in this process."""
+    return settings.embedding_backend == "hf_api"
+
+
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Embed passages. No instruction prefix -- BGE was trained without one on passages."""
+    """Embed passages. No instruction prefix -- BGE is trained without one on passages.
+
+    Ingestion runs on a developer machine, so the local backend is the normal path here;
+    the hosted branch exists so the two backends stay genuinely interchangeable.
+    """
+    if using_hosted_embeddings():
+        return [_hf_embed(text) for text in texts]
     return get_embedder().embed_documents(texts)
 
 
 @lru_cache(maxsize=512)
 def _embed_query_cached(text: str) -> tuple[float, ...]:
     """Embed one query, memoised. Returns a tuple so it is hashable and immutable."""
-    prefix = _query_instruction_for(settings.embedding_model)
-    return tuple(get_embedder().embed_query(f"{prefix}{text}"))
+    prefixed = f"{_query_instruction_for(settings.embedding_model)}{text}"
+
+    if using_hosted_embeddings():
+        return tuple(_hf_embed(prefixed))
+    return tuple(get_embedder().embed_query(prefixed))
 
 
 def embed_query(text: str) -> list[float]:
     """Embed a search query, prefixed with the model's retrieval instruction.
 
-    The prefix is applied here rather than in the wrapper because langchain-huggingface
-    1.x no longer accepts a ``query_instruction`` argument. Skipping it still "works" --
-    it just quietly costs retrieval accuracy, which is why it is centralised in this one
-    function that every caller goes through.
-
     Results are memoised because embedding is deterministic and the same query is
-    frequently re-embedded: the retrieval benchmark sweeps 28 configurations over the
-    same questions, and the agent's retry loop re-searches related text. A fresh list is
-    returned each call so callers cannot mutate the cached vector.
+    frequently re-embedded: the retrieval benchmark sweeps configurations over the same
+    questions, and the agent's retry loop re-searches related text. With the hosted
+    backend this also removes redundant network round trips. A fresh list is returned each
+    call so callers cannot mutate the cached vector.
     """
     return list(_embed_query_cached(text))
+
+
+def warm_up() -> None:
+    """Prepare whichever backend is configured, so the first request is not slow."""
+    if using_hosted_embeddings():
+        get_inference_client()
+        embed_query("warm up")
+    else:
+        get_embedder()

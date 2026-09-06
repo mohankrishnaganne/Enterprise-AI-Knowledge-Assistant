@@ -22,8 +22,9 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        # requirements.txt pins the CPU torch build via its extra index; the default
-        # PyPI wheel bundles CUDA and is ~2.5GB, which is slow and pointless in CI.
+        # requirements-dev.txt chains runtime -> local embeddings -> test tooling.
+        # The embeddings file carries the CPU-torch extra index; the default PyPI wheel
+        # bundles CUDA and is ~2.5GB, which is slow and pointless in CI.
         run: pip install -r requirements-dev.txt
 
       - name: Generate the corpus
@@ -103,3 +104,28 @@ jobs:
           assert Path('data/eval/golden_dataset.json').exists(), 'golden dataset missing'
           print('image contents verified')
           "
+
+  cloud-requirements:
+    name: Streamlit Cloud runtime resolves without torch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Resolve requirements.txt the way Streamlit Cloud does
+        # Cloud installs this file with uv on Python 3.14. Two failures have already
+        # been caused by getting this wrong: torch publishes no 3.14 wheels for the
+        # pinned version, and `--extra-index-url` makes uv unable to resolve anything
+        # the PyTorch index mirrors, because it only considers the first index that
+        # publishes a package name.
+        run: uv pip compile requirements.txt --python-version 3.14 --python-platform linux -o resolved.txt
+
+      - name: Assert the runtime carries no local-embedding stack
+        run: |
+          if grep -qiE '^(torch|sentence-transformers|nvidia-)' resolved.txt; then
+            echo "::error::requirements.txt pulled torch; it must stay deployable on a free tier"
+            grep -iE '^(torch|sentence-transformers|nvidia-)' resolved.txt
+            exit 1
+          fi
+          echo "runtime resolves to $(wc -l < resolved.txt) packages, none of them torch"

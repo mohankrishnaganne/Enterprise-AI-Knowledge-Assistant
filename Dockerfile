@@ -49,7 +49,7 @@ WORKDIR /app
 # --- Dependencies -------------------------------------------------------------
 # Installed before application code is copied, so editing source does not invalidate
 # the (very expensive) dependency layer.
-COPY requirements.txt ./
+COPY requirements.txt requirements-embeddings.txt ./
 
 # requirements.txt carries the CPU-torch extra index and pins torch==2.5.1+cpu on
 # Linux, so no separate torch step is needed. reportlab is added on its own because

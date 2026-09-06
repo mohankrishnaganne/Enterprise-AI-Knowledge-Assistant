@@ -1,14 +1,15 @@
 # =============================================================================
 # Development and evaluation dependencies.
 #
-# Kept separate from requirements.txt because Streamlit Community Cloud installs
-# the runtime file directly, and none of this is needed to serve a request. Install
-# both for local work, CI, or to regenerate the reports:
+# Chains: requirements.txt (runtime) -> requirements-embeddings.txt (local
+# encoder) -> this file (evaluation and test tooling). Streamlit Community Cloud
+# installs only the first, which is why the chain is split at all. Install this one
+# for local work, CI, or to regenerate the reports:
 #
 #     pip install -r requirements-dev.txt
 # =============================================================================
 
--r requirements.txt
+-r requirements-embeddings.txt
 
 # --- Evaluation ---------------------------------------------------------------
 # ragas 0.4.x: `evaluate()` plus explicit LLM/embedding wrappers. Note it imports
