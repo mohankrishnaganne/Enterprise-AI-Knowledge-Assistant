@@ -121,7 +121,9 @@ HF_TOKEN = "hf_..."
 
 - Groq key: <https://console.groq.com/keys>
 - Pinecone key: <https://app.pinecone.io>
-- HuggingFace token: <https://huggingface.co/settings/tokens> (read scope is enough)
+- HuggingFace token: <https://huggingface.co/settings/tokens> — must be a
+  fine-grained token with **Make calls to Inference Providers** enabled. A plain
+  read token returns 403.
 
 The Pinecone index must already be populated — this app queries an existing index
 rather than ingesting on startup. Run `python scripts/run_ingestion.py` locally first.

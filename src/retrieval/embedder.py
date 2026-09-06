@@ -125,7 +125,23 @@ def _hf_embed(text: str) -> list[float]:
     pooling configuration, so the result is flattened defensively rather than indexed
     with an assumption about its shape.
     """
-    output = get_inference_client().feature_extraction(text, model=settings.embedding_model)
+    try:
+        output = get_inference_client().feature_extraction(text, model=settings.embedding_model)
+    except Exception as exc:  # noqa: BLE001 - re-raised below with actionable guidance
+        message = str(exc)
+        if "403" in message or "permission" in message.lower():
+            # A plain "read" token is NOT enough: HuggingFace gates the Inference API
+            # behind its own permission, and the raw 403 says nothing about which box
+            # to tick. This is the single most likely deployment failure, so it is
+            # worth translating.
+            raise RuntimeError(
+                "HuggingFace rejected the token (403). A read-only token is not "
+                "sufficient for the Inference API: create a fine-grained token at "
+                "https://huggingface.co/settings/tokens with 'Make calls to Inference "
+                "Providers' enabled, then update the HF_TOKEN secret. Alternatively set "
+                "EMBEDDING_BACKEND=local to embed in-process instead."
+            ) from exc
+        raise
 
     vector = output.tolist() if hasattr(output, "tolist") else list(output)
     while vector and isinstance(vector[0], list):
