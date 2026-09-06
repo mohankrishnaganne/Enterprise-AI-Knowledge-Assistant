@@ -7,8 +7,8 @@
 #
 # Two build-time decisions worth stating:
 #
-#   1. torch is installed from the CPU index BEFORE requirements.txt. The default wheel
-#      bundles CUDA and is ~2.5GB on its own.
+#   1. requirements.txt pins the CPU torch build via an extra index. The default PyPI
+#      wheel bundles CUDA and pulls ~2.5GB of nvidia packages, useless on a CPU host.
 #   2. The embedding model is downloaded at BUILD time, not on first request. It is
 #      ~130MB; fetching it lazily makes the first user question take ~25s and look
 #      broken, while later ones take 4s. This was measured, not assumed.
@@ -51,8 +51,12 @@ WORKDIR /app
 # the (very expensive) dependency layer.
 COPY requirements.txt ./
 
-RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -r requirements.txt
+# requirements.txt carries the CPU-torch extra index and pins torch==2.5.1+cpu on
+# Linux, so no separate torch step is needed. reportlab is added on its own because
+# the corpus-generation step below needs it; the rest of requirements-dev.txt
+# (RAGAS, pytest, ruff) is never used at runtime and would only add weight.
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir reportlab==5.0.1
 
 # --- Application --------------------------------------------------------------
 COPY --chown=app:app src/ ./src/

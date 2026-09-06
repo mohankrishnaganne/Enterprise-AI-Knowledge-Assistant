@@ -21,12 +21,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install CPU-only torch first
-        # The default wheel bundles CUDA and is ~2.5GB, which is slow and pointless in CI.
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # requirements.txt pins the CPU torch build via its extra index; the default
+        # PyPI wheel bundles CUDA and is ~2.5GB, which is slow and pointless in CI.
+        run: pip install -r requirements-dev.txt
 
       - name: Generate the corpus
         # The two sample PDFs are gitignored build artifacts, so the tests covering the

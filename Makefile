@@ -1,15 +1,17 @@
 # Enterprise AI Knowledge Assistant — developer shortcuts.
 # Windows: run these under Git Bash, or copy the command bodies into PowerShell.
 
-.PHONY: help install corpus ingest ingest-both verify agent api ui eval bench test lint fmt \
+.PHONY: help install install-runtime corpus ingest ingest-both verify agent api ui eval bench test lint fmt \
         docker-build docker-run compose deploy clean
 
 help:  ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # --- Setup --------------------------------------------------------------------
-install:  ## Install dependencies (CPU-only torch first, to avoid the 2.5GB CUDA wheel)
-	pip install torch --index-url https://download.pytorch.org/whl/cpu
+install:  ## Install everything (runtime + evaluation + test tooling)
+	pip install -r requirements-dev.txt
+
+install-runtime:  ## Install only what is needed to serve requests
 	pip install -r requirements.txt
 
 corpus:  ## Generate the synthetic ACME Corp document set into data/raw/

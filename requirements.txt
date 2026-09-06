@@ -1,21 +1,24 @@
 # =============================================================================
-# Enterprise AI Knowledge Assistant — dependencies
+# Runtime dependencies — what the agent, API and UI need to serve requests.
 #
-# Cost target: $0. Groq free tier (LLM), local HuggingFace embeddings (no API),
-# Pinecone serverless free tier (vector DB).
+# Development and evaluation extras (RAGAS, pytest, ruff, reportlab) live in
+# requirements-dev.txt, which installs this file first. Keeping them apart matters
+# for deployment: Streamlit Community Cloud installs THIS file, and the evaluation
+# stack would add hundreds of megabytes it never uses.
 #
 # Targets the LangChain/LangGraph 1.x line (current stable), NOT the 0.2/0.3 line
-# that most RAG tutorials still use. Notable differences: `langchain-core` 1.x,
-# `create_agent` replacing the legacy agent constructors, and `langgraph` 1.x.
+# most RAG tutorials still use.
 #
 # ALWAYS install into a virtualenv:
 #     python -m venv .venv && .venv/Scripts/activate      # Windows
 #     python -m venv .venv && source .venv/bin/activate   # macOS / Linux
 #
-# NOTE ON torch: the default wheel bundles CUDA and is ~2.5GB. For a slim CPU-only
-# install run this BEFORE `pip install -r requirements.txt`:
-#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+# The extra index below makes pip resolve the CPU-only torch build. The default
+# PyPI wheel bundles CUDA and pulls ~2.5GB of nvidia packages that are useless on
+# a CPU host and too large for most free tiers.
 # =============================================================================
+
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 # --- Core orchestration -------------------------------------------------------
 langgraph==1.2.11
@@ -24,17 +27,20 @@ langchain-core==1.6.2
 langchain-text-splitters==1.1.2
 
 # --- Model providers ----------------------------------------------------------
-langchain-groq==1.1.3            # Groq API: Llama 3.3 70B / 3.1 8B, free tier
+langchain-groq==1.1.3            # Groq API: gpt-oss-120b / gpt-oss-20b, free tier
 langchain-huggingface==1.2.2     # local embeddings, no API key required
 sentence-transformers==6.0.1     # backs BAAI/bge-small-en-v1.5 (384-dim)
-torch==2.5.1                     # see CPU-only note above
+
+# CPU build pinned explicitly. `torch==2.5.1` alone resolves to the CUDA wheel on
+# Linux even with the extra index present, because both indexes offer that label.
+torch==2.5.1+cpu ; sys_platform == "linux"
+torch==2.5.1 ; sys_platform != "linux"
 
 # --- Vector database ----------------------------------------------------------
 pinecone==7.3.0                  # new SDK name (NOT the legacy `pinecone-client`)
 
 # --- Document loading ---------------------------------------------------------
 pypdf==6.17.0
-reportlab==5.0.1                 # renders the sample PDFs in the synthetic corpus
 
 # --- API layer ----------------------------------------------------------------
 fastapi==0.141.1
@@ -47,19 +53,8 @@ sse-starlette==3.4.10
 streamlit==1.63.0
 requests==2.34.2
 
-# --- Evaluation ---------------------------------------------------------------
-ragas==0.4.3                     # 0.4.x: `evaluate()` + explicit LLM/embedding wrappers
-datasets==5.0.1
-pandas==3.0.5
-
 # --- Utilities ----------------------------------------------------------------
 python-dotenv==1.2.3
 structlog==26.1.0
 tenacity==8.5.0
 tqdm==4.70.0
-
-# --- Dev / quality ------------------------------------------------------------
-pytest==9.1.1
-pytest-asyncio==1.4.0
-httpx==0.28.1
-ruff==0.16.6                     # linter AND formatter (replaces black)
