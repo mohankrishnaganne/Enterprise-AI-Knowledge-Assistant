@@ -60,9 +60,12 @@ jobs:
           echo "all shell scripts are LF-only"
 
       - name: Shellcheck
+        # shellcheck is preinstalled on ubuntu-latest. Installing it via apt added a
+        # transient network dependency that failed the job without any finding in the
+        # scripts themselves.
         run: |
-          sudo apt-get update && sudo apt-get install -y shellcheck
-          shellcheck docker/start.sh
+          shellcheck --version
+          shellcheck docker/start.sh deploy/deploy_hf_space.sh
 
   docker:
     name: Docker image builds and starts

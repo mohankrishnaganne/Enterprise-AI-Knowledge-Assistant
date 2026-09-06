@@ -7,8 +7,9 @@
 #
 # Two build-time decisions worth stating:
 #
-#   1. requirements.txt pins the CPU torch build via an extra index. The default PyPI
-#      wheel bundles CUDA and pulls ~2.5GB of nvidia packages, useless on a CPU host.
+#   1. requirements-embeddings.txt pins the CPU torch build via an extra index. The
+#      default PyPI wheel bundles CUDA and pulls ~2.5GB of nvidia packages, which are
+#      useless on a CPU host.
 #   2. The embedding model is downloaded at BUILD time, not on first request. It is
 #      ~130MB; fetching it lazily makes the first user question take ~25s and look
 #      broken, while later ones take 4s. This was measured, not assumed.
@@ -51,11 +52,14 @@ WORKDIR /app
 # the (very expensive) dependency layer.
 COPY requirements.txt requirements-embeddings.txt ./
 
-# requirements.txt carries the CPU-torch extra index and pins torch==2.5.1+cpu on
-# Linux, so no separate torch step is needed. reportlab is added on its own because
-# the corpus-generation step below needs it; the rest of requirements-dev.txt
-# (RAGAS, pytest, ruff) is never used at runtime and would only add weight.
-RUN pip install --no-cache-dir -r requirements.txt \
+# The image uses the LOCAL embedding backend, so it installs requirements-embeddings.txt
+# (which chains requirements.txt) rather than the bare runtime file. Baking the model into
+# the image means no query-time network dependency, which is the right trade for a
+# container; Streamlit Cloud installs only requirements.txt and uses the hosted API.
+# That file also carries the CPU-torch extra index -- the default PyPI wheel bundles CUDA.
+# reportlab is installed separately for the corpus-generation step below; the rest of
+# requirements-dev.txt is test tooling with no place in a runtime image.
+RUN pip install --no-cache-dir -r requirements-embeddings.txt \
     && pip install --no-cache-dir reportlab==5.0.1
 
 # --- Application --------------------------------------------------------------
