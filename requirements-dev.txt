@@ -27,3 +27,8 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
 ruff==0.16.6                     # linter AND formatter (replaces black)
+
+# --- Documentation ------------------------------------------------------------
+# Only needed to regenerate the README screenshots via
+# scripts/capture_screenshots.py. Requires a one-off `playwright install chromium`.
+playwright==1.62.0
