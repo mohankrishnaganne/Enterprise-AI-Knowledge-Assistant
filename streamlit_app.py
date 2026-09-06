@@ -39,7 +39,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-REQUIRED_SECRETS = ("GROQ_API_KEY", "PINECONE_API_KEY", "HF_TOKEN")
+# Always required. HF_TOKEN is handled separately: it is only needed when embeddings
+# are hosted, and on a developer machine `hf auth login` already caches one.
+REQUIRED_SECRETS = ("GROQ_API_KEY", "PINECONE_API_KEY")
 
 # Non-secret defaults. Streamlit Cloud has no .env file, and these must match the values
 # the retrieval benchmark measured, or the deployed app is not the system that was
@@ -88,7 +90,7 @@ def bootstrap_environment() -> list[str]:
         pass
 
     missing: list[str] = []
-    for key in REQUIRED_SECRETS:
+    for key in (*REQUIRED_SECRETS, "HF_TOKEN"):
         value = None
         try:
             value = st.secrets.get(key)
@@ -98,8 +100,21 @@ def bootstrap_environment() -> list[str]:
 
         if value:
             os.environ[key] = str(value)
-        else:
+        elif key in REQUIRED_SECRETS:
             missing.append(key)
+
+    # HF_TOKEN is only needed when embeddings are hosted, and even then a cached
+    # `hf auth login` token counts. Requiring it unconditionally would block local runs
+    # that are already authenticated.
+    if os.environ.get("EMBEDDING_BACKEND") == "hf_api" and not os.environ.get("HF_TOKEN"):
+        try:
+            from huggingface_hub import get_token
+
+            if not get_token():
+                missing.append("HF_TOKEN")
+        except Exception:  # noqa: BLE001 - treat an unusable hub install as "no token"
+            missing.append("HF_TOKEN")
+
     return missing
 
 
@@ -133,12 +148,16 @@ rather than ingesting on startup. Run `python scripts/run_ingestion.py` locally 
 
 
 # Safe to import now that the environment is populated.
+from ui import theme  # noqa: E402
 from ui.components import (  # noqa: E402
-    HOW_IT_WORKS,
-    PAGE_INTRO,
     render_answer,
+    render_empty_state,
+    render_sidebar_reference,
     render_sidebar_samples,
+    render_status,
 )
+
+theme.inject()
 
 
 @st.cache_resource(show_spinner="Warming up the agent…")
@@ -228,39 +247,36 @@ if "pending" not in st.session_state:
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.title("📚 ACME Assistant")
+    st.markdown("### 📚 ACME Assistant")
     st.caption("Agentic RAG over internal documentation")
 
     ready, components = check_backend()
-    if ready:
-        st.success("Backend ready")
-    else:
-        st.error("Backend not ready")
-    for component in components:
-        st.markdown(
-            f"{'🟢' if component['ready'] else '🔴'} **{component['name']}** — "
-            f"{component.get('detail', '')}"
-        )
+    render_status(ready, components)
 
     st.divider()
     render_sidebar_samples()
 
     st.divider()
-    st.subheader("How it works")
-    st.markdown(HOW_IT_WORKS)
+    render_sidebar_reference()
 
     st.divider()
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
-    st.caption("Agent runs in-process; embeddings are served by the HuggingFace Inference API.")
+    st.caption("Agent runs in-process; embeddings served by the HuggingFace Inference API.")
 
 
 # ---------------------------------------------------------------------------
 # Main panel
 # ---------------------------------------------------------------------------
-st.title("Enterprise AI Knowledge Assistant")
-st.caption(PAGE_INTRO)
+theme.render_hero()
+theme.render_metrics()
+
+# `pending` is checked too: on the run that handles a sample-card click the message
+# list is still empty, so without it the cards would render one last time above the
+# answer they just produced.
+if not st.session_state.messages and not st.session_state.pending:
+    render_empty_state()
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -286,3 +302,5 @@ if question:
             st.session_state.messages.append({"role": "assistant", "result": result})
         except Exception as exc:  # noqa: BLE001
             st.error(f"The agent could not complete this request: {exc}")
+
+theme.render_footer()

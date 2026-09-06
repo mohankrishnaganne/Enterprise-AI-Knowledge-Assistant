@@ -31,12 +31,14 @@ REQUEST_TIMEOUT = 120
 
 # Presentation is shared with streamlit_app.py (the in-process Cloud entrypoint) so the
 # two interfaces cannot drift apart.
+from ui import theme  # noqa: E402
 from ui.components import (  # noqa: E402
-    HOW_IT_WORKS,
     NODE_ICONS,
-    PAGE_INTRO,
     render_answer,
+    render_empty_state,
+    render_sidebar_reference,
     render_sidebar_samples,
+    render_status,
 )
 
 st.set_page_config(
@@ -45,6 +47,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+theme.inject()
 
 
 def api_ready() -> tuple[bool, list[dict]]:
@@ -130,40 +134,37 @@ if "pending" not in st.session_state:
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.title("📚 ACME Assistant")
+    st.markdown("### 📚 ACME Assistant")
     st.caption("Agentic RAG over internal documentation")
 
     ready, components = api_ready()
-    if ready:
-        st.success("Backend ready")
-    else:
-        st.error("Backend not ready")
-    for component in components:
-        st.markdown(
-            f"{'🟢' if component['ready'] else '🔴'} **{component['name']}** — "
-            f"{component.get('detail', '')}"
-        )
+    render_status(ready, components)
 
     st.divider()
     render_sidebar_samples()
 
     st.divider()
-    st.subheader("How it works")
-    st.markdown(HOW_IT_WORKS)
+    render_sidebar_reference()
 
     st.divider()
     if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
         st.session_state.session_id = str(uuid.uuid4())
         st.rerun()
-    st.caption(f"API: `{API_BASE_URL}`")
+    st.caption(f"Backend: `{API_BASE_URL}`")
 
 
 # ---------------------------------------------------------------------------
 # Main panel
 # ---------------------------------------------------------------------------
-st.title("Enterprise AI Knowledge Assistant")
-st.caption(PAGE_INTRO)
+theme.render_hero()
+theme.render_metrics()
+
+# `pending` is checked too: on the run that handles a sample-card click the message
+# list is still empty, so without it the cards would render one last time above the
+# answer they just produced.
+if not st.session_state.messages and not st.session_state.pending:
+    render_empty_state()
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -192,3 +193,5 @@ if question:
             progress.empty()
             st.error(f"Request failed: {exc}")
             st.caption(f"Is the backend running at {API_BASE_URL}?  Start it with `make api`.")
+
+theme.render_footer()
