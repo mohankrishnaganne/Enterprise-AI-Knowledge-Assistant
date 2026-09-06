@@ -60,12 +60,18 @@ jobs:
           echo "all shell scripts are LF-only"
 
       - name: Shellcheck
-        # shellcheck is preinstalled on ubuntu-latest. Installing it via apt added a
-        # transient network dependency that failed the job without any finding in the
-        # scripts themselves.
+        # The official static binary, pinned. Neither of the obvious alternatives works
+        # reliably: shellcheck is not present on the runner image (the step failed in one
+        # second with command-not-found), and installing it with apt adds a transient
+        # network dependency that failed the job for reasons unrelated to the scripts.
+        # Pinning also guarantees CI and local development see the same findings.
+        env:
+          SHELLCHECK_VERSION: v0.11.0
         run: |
-          shellcheck --version
-          shellcheck docker/start.sh deploy/deploy_hf_space.sh
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"             | tar -xJf -
+          SHELLCHECK="./shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          "$SHELLCHECK" --version
+          "$SHELLCHECK" docker/start.sh deploy/deploy_hf_space.sh
 
   docker:
     name: Docker image builds and starts
